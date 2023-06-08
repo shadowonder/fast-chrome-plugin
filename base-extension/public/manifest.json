@@ -1,0 +1,27 @@
+{
+  "version": "1.0",
+  "manifest_version": 3,
+  "name": "Chrome Extension",
+  "action": {
+    "default_popup": "index.html",
+    "default_icon": {
+      "16": "image/16x16.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.google.com/*"
+      ]
+    }
+  ],
+  "icons": {
+    "16": "image/16x16.png",
+    "48": "image/48x48.png",
+    "128": "image/128x128.png",
+    "256": "image/256x256.png"
+  },
+  "permissions": [
+    "tabs"
+  ]
+}
