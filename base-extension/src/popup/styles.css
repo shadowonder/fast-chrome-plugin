@@ -1,0 +1,98 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #17283b;
+  background: #f3f6fa;
+  font-synthesis: none;
+}
+body {
+  margin: 0;
+  width: 380px;
+}
+main {
+  padding: 24px;
+}
+h1 {
+  font-size: 25px;
+  line-height: 1.2;
+  margin: 10px 0 24px;
+}
+h2 {
+  font-size: 15px;
+  margin: 0 0 10px;
+}
+section {
+  padding: 16px;
+  background: white;
+  border: 1px solid #dde4ed;
+  border-radius: 12px;
+  margin: 16px 0;
+}
+p {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #52627a;
+  overflow-wrap: anywhere;
+}
+label {
+  max-height: 72px;
+  overflow: auto;
+}
+label {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 7px;
+}
+select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #b8c6d8;
+  border-radius: 6px;
+  background: white;
+  color: inherit;
+}
+button {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 9px 11px;
+  border: 1px solid #b8c6d8;
+  border-radius: 6px;
+  color: #173f70;
+  background: #edf4ff;
+  cursor: pointer;
+}
+button:hover {
+  background: #dceaff;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+:focus-visible {
+  outline: 2px solid #246aca;
+  outline-offset: 2px;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+code {
+  font-size: 11px;
+}
+.result {
+  display: block;
+  padding: 12px;
+  border-radius: 8px;
+  background: #e5edf7;
+  font-size: 12px;
+  line-height: 1.6;
+  max-height: 150px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.error {
+  color: #8b2434;
+  background: #ffedf0;
+}

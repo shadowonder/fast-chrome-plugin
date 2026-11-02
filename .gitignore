@@ -1,3 +1,6 @@
-node_module
+node_modules/
+dist/
+coverage/
+.DS_Store
 .idea
 *.zip

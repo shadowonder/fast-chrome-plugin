@@ -1,10 +1,13 @@
 # Base extension
 
-This is a simple Chrome extension, mainly designed for quickly building Chrome extension plugins.
+This directory is the runnable starter. The popup uses `src/page.ts` to execute DOM and webpage storage actions directly with `chrome.scripting.executeScript()`; no persistent content script or messaging setup is needed. See the [root README](../README.md) for architecture, storage examples, permissions, customization, debugging, and browser verification.
 
-This extension consists of multiple components, including frontend page injection and backend display pages. This project uses React for basic rendering. You can use npm run build to generate the "build" folder, which can be directly called in Chrome.
+Use Node 22.12+ (22.x), Node 24.x (recommended), or Node 26+ and npm:
 
-PageScript.tsx: Frontend page injection. Used for JavaScript operations on the frontend page.
-Popup.tsx: Panel operations for the Chrome extension.
+```sh
+npm ci
+npm run dev     # development extension; keep the Vite server running
+npm run check   # lint, types, tests, production build, artifact checks, formatting
+```
 
-Please note that all the code will be bundled into JavaScript, which may make it appear bloated. If needed, modifications can be made to the packaging tool in script/updateManifest.js.
+Load this directory's `dist/` folder through `chrome://extensions/` → Developer mode → Load unpacked. Use `npm run build` for a production extension.
