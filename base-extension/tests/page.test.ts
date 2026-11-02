@@ -1,95 +1,103 @@
 import vm from 'node:vm';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { DEMO_KEY, runPageAction } from '../src/page';
-import { extensionStorage } from '../src/storage';
-
-function memoryStorage() {
-  const data = new Map<string, string>();
-  return {
-    getItem: (key: string) => data.get(key) ?? null,
-    setItem: (key: string, value: string) => {
-      data.set(key, value);
-    },
-    removeItem: (key: string) => {
-      data.delete(key);
-    },
-  };
-}
+import { isPlanningMounted, readPageToken, setPlanningView } from '../src/page';
 
 const query = vi.fn();
 const executeScript = vi.fn();
-let pageWindow: {
-  localStorage: ReturnType<typeof memoryStorage>;
-  sessionStorage: ReturnType<typeof memoryStorage>;
-};
 beforeEach(() => {
-  pageWindow = { localStorage: memoryStorage(), sessionStorage: memoryStorage() };
-  query.mockReset().mockResolvedValue([{ id: 7, url: 'https://example.com/' }]);
-  // Chrome serializes func: a fresh VM catches accidental outer-scope references.
-  executeScript
-    .mockReset()
-    .mockImplementation(
-      async ({ func, args }: { func: { toString(): string }; args: unknown[] }) => [
-        {
-          frameId: 0,
-          result: vm.runInNewContext(`(${func.toString()})(...args)`, {
-            args,
-            document: { title: '<untrusted page title>' },
-            window: pageWindow,
-          }),
-        },
-      ],
-    );
+  query.mockReset().mockResolvedValue([{ id: 7, url: 'https://example.test/' }]);
+  executeScript.mockReset();
   vi.stubGlobal('chrome', { tabs: { query }, scripting: { executeScript } });
 });
 afterEach(() => vi.unstubAllGlobals());
 
-it('reads the DOM through a self-contained function in the isolated top frame', async () => {
-  expect(await runPageAction('title')).toBe('<untrusted page title>');
-  expect(query).toHaveBeenCalledWith({ active: true, currentWindow: true });
-  expect(executeScript).toHaveBeenCalledWith(
+it('reads actual mounted state without GraphQL or token access', async () => {
+  executeScript.mockResolvedValue([{ result: { value: true }, documentId: 'doc-1' }]);
+  expect(await isPlanningMounted()).toBe(true);
+  expect(executeScript).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({
-      target: { tabId: 7 },
       world: 'ISOLATED',
-      func: expect.any(Function),
+      target: { tabId: 7 },
+      args: expect.arrayContaining(['status']),
     }),
   );
 });
 
-it.each(['local', 'session'] as const)(
-  'reads, writes, and removes only the demo key in %sStorage',
-  async (area) => {
-    const store = area === 'local' ? pageWindow.localStorage : pageWindow.sessionStorage;
-    const other = area === 'local' ? pageWindow.sessionStorage : pageWindow.localStorage;
-    store.setItem('unrelated', 'keep me');
-    expect(await runPageAction('get', area)).toBeNull();
-    await runPageAction('set', area);
-    expect(await runPageAction('get', area)).toBe('Hello from Fast Chrome Starter');
-    expect(other.getItem(DEMO_KEY)).toBeNull();
-    store.setItem(DEMO_KEY, 'plain text, not JSON');
-    expect(await runPageAction('get', area)).toBe('plain text, not JSON');
-    await runPageAction('remove', area);
-    expect(await runPageAction('get', area)).toBeNull();
-    expect(store.getItem('unrelated')).toBe('keep me');
-  },
-);
-
-it('returns blocked storage and quota failures from the injected function', async () => {
-  Object.defineProperty(pageWindow, 'localStorage', {
-    get() {
-      throw new Error('Storage blocked');
-    },
-  });
-  await expect(runPageAction('get')).rejects.toThrow('Storage blocked');
-  pageWindow.sessionStorage.setItem = () => {
-    throw new Error('Quota exceeded');
-  };
-  await expect(runPageAction('set', 'session')).rejects.toThrow('Quota exceeded');
+it('checks target, fetches once, and mounts only in the original document with safe metadata', async () => {
+  executeScript
+    .mockResolvedValueOnce([{ result: { value: false }, documentId: 'doc-1' }])
+    .mockResolvedValueOnce([
+      {
+        result: { value: { data: { __typename: 'Query', secret: 'mock-id-token' }, status: 200 } },
+        documentId: 'doc-1',
+      },
+    ])
+    .mockResolvedValueOnce([{ result: { value: true }, documentId: 'doc-1' }]);
+  expect(await setPlanningView(true)).toBe(true);
+  const calls = executeScript.mock.calls;
+  expect(calls).toHaveLength(3);
+  expect(calls[0]![0].args[0]).toBe('check');
+  expect(calls[1]![0].target).toEqual({ tabId: 7, documentIds: ['doc-1'] });
+  expect(calls[2]![0].target).toEqual({ tabId: 7, documentIds: ['doc-1'] });
+  expect(calls[2]![0].args[3]).toBe('GraphQL connected (HTTP 200, 2 response field(s)).');
+  expect(JSON.stringify(calls[2]![0].args)).not.toContain('mock-id-token');
 });
 
-it('rejects missing tabs and unsupported pages before injection', async () => {
+it('does not fetch for an existing mount, missing target, or removal', async () => {
+  executeScript.mockResolvedValueOnce([{ result: { value: true } }]);
+  expect(await setPlanningView(true)).toBe(true);
+  expect(executeScript).toHaveBeenCalledTimes(1);
+  executeScript
+    .mockClear()
+    .mockResolvedValueOnce([{ result: { error: 'Planning target not found' } }]);
+  await expect(setPlanningView(true)).rejects.toThrow('target not found');
+  expect(executeScript).toHaveBeenCalledTimes(1);
+  executeScript.mockClear().mockResolvedValueOnce([{ result: { value: false } }]);
+  expect(await setPlanningView(false)).toBe(false);
+  expect(executeScript).toHaveBeenCalledTimes(1);
+  expect(executeScript.mock.calls[0]![0].args[0]).toBe('remove');
+});
+
+it('does not mount if GraphQL fails or the checked page navigates away', async () => {
+  executeScript
+    .mockResolvedValueOnce([{ result: { value: false }, documentId: 'doc-1' }])
+    .mockResolvedValueOnce([{ result: { error: 'Authentication failed' } }]);
+  await expect(setPlanningView(true)).rejects.toThrow('Authentication failed');
+  expect(executeScript).toHaveBeenCalledTimes(2);
+  executeScript
+    .mockClear()
+    .mockResolvedValueOnce([{ result: { value: false }, documentId: 'doc-1' }])
+    .mockRejectedValueOnce(new Error('No document with ID doc-1'));
+  await expect(setPlanningView(true)).rejects.toThrow('No document');
+  expect(executeScript).toHaveBeenCalledTimes(2);
+});
+
+it('reads a full mock token with a serialized function, reporting missing or blocked storage', async () => {
+  let token: string | null = 'mock-id-token';
+  let blocked = false;
+  executeScript.mockImplementation(async ({ func }: { func: { toString(): string } }) => [
+    {
+      result: vm.runInNewContext(`(${func.toString()})()`, {
+        sessionStorage: {
+          getItem: (key: string) => {
+            expect(key).toBe('idToken');
+            if (blocked) throw new Error('denied');
+            return token;
+          },
+        },
+      }),
+    },
+  ]);
+  expect(await readPageToken()).toBe('mock-id-token');
+  token = ' ';
+  await expect(readPageToken()).rejects.toThrow('No idToken');
+  blocked = true;
+  await expect(readPageToken()).rejects.toThrow('inaccessible');
+});
+
+it('handles unsupported pages, missing tabs/results, and injection denial', async () => {
   query.mockResolvedValue([]);
-  await expect(runPageAction('title')).rejects.toThrow('No active tab');
+  await expect(readPageToken()).rejects.toThrow('No active tab');
   for (const url of [
     undefined,
     'chrome://extensions/',
@@ -98,42 +106,12 @@ it('rejects missing tabs and unsupported pages before injection', async () => {
     'https://chrome.google.com/webstore/detail/test',
   ]) {
     query.mockResolvedValue([{ id: 7, url }]);
-    await expect(runPageAction('title')).rejects.toThrow();
+    await expect(readPageToken()).rejects.toThrow();
   }
   expect(executeScript).not.toHaveBeenCalled();
-});
-
-it('surfaces injection restrictions and missing execution results', async () => {
-  executeScript.mockRejectedValueOnce(new Error('Site access denied'));
-  await expect(runPageAction('title')).rejects.toThrow('Site access denied');
+  query.mockResolvedValue([{ id: 7, url: 'https://example.test/' }]);
   executeScript.mockResolvedValueOnce([]);
-  await expect(runPageAction('title')).rejects.toThrow('No page result');
-});
-
-it('keeps optional extension storage separate and propagates Chrome API failures', async () => {
-  for (const area of ['local', 'session'] as const) {
-    const data: Record<string, unknown> = {};
-    vi.stubGlobal('chrome', {
-      storage: {
-        [area]: {
-          get: async (key: string) => ({ [key]: data[key] }),
-          set: async (items: Record<string, unknown>) => {
-            Object.assign(data, items);
-          },
-          remove: async (key: string) => {
-            delete data[key];
-          },
-        },
-      },
-    });
-    const store = extensionStorage(area);
-    await store.set('demo', false);
-    expect(await store.get('demo')).toBe(false);
-    await store.remove('demo');
-    expect(await store.get('demo')).toBeUndefined();
-  }
-  vi.stubGlobal('chrome', {
-    storage: { local: { set: vi.fn().mockRejectedValue(new Error('Quota exceeded')) } },
-  });
-  await expect(extensionStorage('local').set('demo', 'text')).rejects.toThrow('Quota exceeded');
+  await expect(readPageToken()).rejects.toThrow('No page result');
+  executeScript.mockRejectedValueOnce(new Error('Site access denied'));
+  await expect(readPageToken()).rejects.toThrow('Site access denied');
 });

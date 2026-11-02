@@ -14,3 +14,15 @@ export function extensionStorage(area: 'local' | 'session') {
     },
   };
 }
+
+export type PopupTab = 'planning' | 'token';
+
+export async function loadPopupTab(): Promise<PopupTab> {
+  return (await extensionStorage('local').get('selectedPopupTab')) === 'token'
+    ? 'token'
+    : 'planning';
+}
+
+export async function savePopupTab(tab: PopupTab): Promise<void> {
+  await extensionStorage('local').set('selectedPopupTab', tab);
+}

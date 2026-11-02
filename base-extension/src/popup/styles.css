@@ -6,49 +6,85 @@
 }
 body {
   margin: 0;
-  width: 380px;
+  width: 360px;
 }
 main {
-  padding: 24px;
+  padding: 20px;
 }
 h1 {
-  font-size: 25px;
-  line-height: 1.2;
-  margin: 10px 0 24px;
+  font-size: 20px;
+  margin: 0 0 16px;
 }
-h2 {
-  font-size: 15px;
-  margin: 0 0 10px;
+.tabs {
+  display: flex;
+  gap: 8px;
+}
+.tabs button {
+  flex: 1;
+}
+.tabs [aria-selected='true'] {
+  background: #173f70;
+  color: white;
 }
 section {
+  margin: 16px 0;
   padding: 16px;
   background: white;
   border: 1px solid #dde4ed;
-  border-radius: 12px;
-  margin: 16px 0;
+  border-radius: 10px;
 }
 p {
   font-size: 12px;
   line-height: 1.6;
-  color: #52627a;
   overflow-wrap: anywhere;
 }
 label {
-  max-height: 72px;
-  overflow: auto;
-}
-label {
   display: block;
-  font-size: 12px;
-  margin-bottom: 7px;
+  font-size: 13px;
+  margin-bottom: 8px;
 }
-select {
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+input[role='switch'] {
+  appearance: none;
+  width: 36px;
+  height: 22px;
+  border-radius: 12px;
+  background: #79889b;
+  padding: 3px;
+  margin: 0;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+input[role='switch']::before {
+  content: '';
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: white;
+  transition: transform 120ms;
+}
+input[role='switch']:checked {
+  background: #246aca;
+}
+input[role='switch']:checked::before {
+  transform: translateX(14px);
+}
+textarea {
+  box-sizing: border-box;
   width: 100%;
+  height: 150px;
+  resize: vertical;
+  overflow: auto;
+  font: 11px/1.5 monospace;
   padding: 8px;
   border: 1px solid #b8c6d8;
   border-radius: 6px;
-  background: white;
-  color: inherit;
 }
 button {
   font: inherit;
@@ -62,9 +98,9 @@ button {
   cursor: pointer;
 }
 button:hover {
-  background: #dceaff;
+  filter: brightness(0.95);
 }
-button:disabled {
+:disabled {
   opacity: 0.5;
   cursor: wait;
 }
@@ -74,25 +110,12 @@ button:disabled {
 }
 .actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-code {
-  font-size: 11px;
-}
-.result {
-  display: block;
-  padding: 12px;
-  border-radius: 8px;
-  background: #e5edf7;
-  font-size: 12px;
-  line-height: 1.6;
-  max-height: 150px;
-  overflow: auto;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
+  gap: 8px;
+  margin-top: 10px;
 }
 .error {
   color: #8b2434;
   background: #ffedf0;
+  padding: 10px;
+  border-radius: 6px;
 }

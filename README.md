@@ -1,12 +1,10 @@
 # Fast Chrome Plugin
 
-A lightweight Manifest V3 starter: a React popup that reads the current webpage's DOM and uses its `localStorage` and `sessionStorage`. The runnable project is in [`base-extension`](base-extension).
-
-The runtime is small: `Popup.tsx` renders the interface, and `page.ts` runs a function on the active webpage using `chrome.scripting.executeScript()`. Chrome returns the result directly to the popup. No persistent content script, message protocol, or application background worker is needed for these button-triggered actions.
+A lightweight Chrome Manifest V3 extension built with Vite, CRXJS, React, and TypeScript. The React popup has two tabs: **Planning** and **Token**. Page operations use `chrome.scripting.executeScript()` with direct results, without a persistent content listener or application background worker.
 
 ## Install, build, and load
 
-Use Node **22.12+ within 22.x**, **24.x** (recommended), or **26+**, npm, and Chrome 120+. Node 23 and 25 are outside Vitest's supported engines. `.nvmrc` selects Node 22.
+Use Node **22.12+ within 22.x**, **24.x** (recommended), or **26+**, npm, and Chrome 120+. `.nvmrc` selects Node 22.
 
 ```sh
 git clone https://github.com/shadowonder/fast-chrome-plugin.git
@@ -15,33 +13,82 @@ npm ci
 npm run build
 ```
 
-Open `chrome://extensions/`, enable **Developer mode**, select **Load unpacked**, and choose **`base-extension/dist/`**. Pin the extension and open its popup on a regular HTTP(S) webpage.
+Open `chrome://extensions/`, enable **Developer mode**, choose **Load unpacked**, and select **`base-extension/dist/`**. Pin the extension and open the popup on a regular HTTP(S) webpage.
 
-- **Read page title** reads `document.title` without changing the page.
-- Choose **localStorage** or **sessionStorage**, then **Save demo**, **Read demo**, or **Remove demo**.
-- The storage buttons touch only `fast-chrome-starter:demo`, using the harmless string `Hello from Fast Chrome Starter`. They never enumerate website storage. Remove the demo key when finished; the website can see these values.
+The real website selector and business schema are not decided yet. Planning has a TODO selector and a temporary connectivity query; configure the selector before expecting it to mount on a real page.
 
-## Stack and commands
+## Popup tabs
 
-Vite 8, CRXJS 3, React 19, TypeScript 6, Chrome API types, ESLint 10, Prettier, and Vitest 5. Dependencies are pinned and installed through the committed npm lockfile. TypeScript 6 stays within the installed TypeScript ESLint release's supported range.
+### Planning
 
-Run commands inside `base-extension`:
+The **Display planning view** switch checks the active webpage for a configured target. When enabled, it:
 
-| Command                                   | Purpose                                                                          |
-| ----------------------------------------- | -------------------------------------------------------------------------------- |
-| `npm ci`                                  | Install the committed dependency graph                                           |
-| `npm run dev`                             | Start Vite / CRXJS development mode                                              |
-| `npm run build`                           | Type-check and produce the production `dist/` extension                          |
-| `npm run lint`                            | Check source, tests, and configuration                                           |
-| `npm run typecheck`                       | Check TypeScript                                                                 |
-| `npm test` / `npm run test:watch`         | Run / watch the core tests                                                       |
-| `npm run verify:build`                    | Check production manifest and bundled resources; build first                     |
-| `npm run format` / `npm run format:check` | Apply / check formatting                                                         |
-| `npm run check`                           | Run lint, types, tests, production build, artifact checks, and formatting checks |
+1. Checks the target and whether a view already exists.
+2. Reads the webpage's `sessionStorage.getItem('idToken')` and makes one same-origin GraphQL request.
+3. Mounts a small placeholder **adjacent to the target**, only after a successful request.
 
-For development, run `npm run dev`, wait for startup, and load `dist/` as unpacked. Keep the server running on port 5173. CRXJS provides popup hot updates; changed page-action functions run on the next click after the popup updates. Reload the extension after manifest changes. CRXJS adds development helpers, including a worker and localhost connections; run `npm run build` before distributing or checking production behavior.
+The switch initializes from the actual page DOM when the Planning panel opens. Repeated enabling does not duplicate an existing view or repeat its request. Disabling removes only the extension-owned root. No original webpage content is replaced, and no observers, listeners, polling, or retries are installed.
 
-## Source layout
+The view is page-scoped. It disappears after a full page reload and is not automatically restored. A missing target, token, or failed connection leaves a new view unmounted and displays an error. If another application action removes the view while the popup stays open, reopen the panel to refresh its state.
+
+### Token
+
+Opening the **Token** panel reads only the current page's `idToken` from session storage. The full value appears in a selectable, scrollable, read-only text field. **Refresh** reads it again and clears stale values on failure. **Copy token** calls the Clipboard API directly from the button click; if clipboard access is blocked, select and copy the field manually.
+
+The token is held only in popup memory and cleared when leaving the Token panel. It is never saved to extension storage or logged. Copying intentionally places the full value on your system clipboard.
+
+The selected popup tab is the only persisted feature preference: `chrome.storage.local.selectedPopupTab`, containing `planning` or `token`. Reopening the popup restores it. Preference failures show a warning without preventing page actions.
+
+## Configure the Planning target
+
+Edit **`base-extension/src/planning.config.ts`**. It contains an explicit TODO and this placeholder:
+
+```ts
+export const PLANNING_TARGET: { kind: 'id' | 'css' | 'xpath'; value: string } = {
+  kind: 'css',
+  value: '#planning-target',
+};
+```
+
+Examples, once the real website is known:
+
+```ts
+{ kind: 'id', value: 'actual-container-id' }
+{ kind: 'css', value: 'main .actual-container' }
+{ kind: 'xpath', value: '//*[@id="actual-container-id"]' }
+```
+
+Choose an element **inside the top-frame webpage body**. A missing target or invalid selector produces an error; there is no fallback to an arbitrary page element. Body and document-root targets are rejected because the example mounts adjacent to the selected element.
+
+`PLANNING_ROOT_ID` gives the root a unique extension-specific ID. A small ownership marker prevents removing a webpage element with a colliding ID. The root contains a Shadow DOM for style isolation. `src/planning.ts` holds the placeholder markup; replace that small rendering block when business content is defined. It uses DOM creation and `textContent`, without unsafe HTML rendering.
+
+## GraphQL transport
+
+`src/graphql.ts` exports the self-contained `requestGraphQL(query, variables?)` function, executed in the webpage's isolated world. The separate `PLANNING_QUERY` in `planning.config.ts` is temporarily:
+
+```graphql
+query {
+  __typename
+}
+```
+
+No business schema or fields have been invented. Replace the query only once the schema is known. The transport accepts optional serializable variables, so the invocation in `src/page.ts` can later pass `[PLANNING_QUERY, { ... }]`.
+
+Every request uses:
+
+```ts
+new URL('/graphql', window.location.origin);
+```
+
+It reads `sessionStorage.getItem('idToken')` in the page context, then sends POST JSON containing `query` and optional `variables`, with `Content-Type: application/json` and `Authorization: Bearer <idToken>`. It never uses the popup origin or a fixed external hostname.
+
+Fetch is restricted to the same origin, uses same-origin credentials, disables caching, rejects redirects, and has a 15-second timeout. It makes no automatic retry or background refresh. Request failures, inaccessible storage, empty tokens, HTTP 401/403, other unsuccessful HTTP responses, invalid JSON/data, and GraphQL errors are handled explicitly. Errors do not echo response bodies or backend error messages that might include credentials.
+
+The placeholder displays only HTTP status and the number of response fields. It does not put the token, response values, or server error messages into the webpage DOM. The transport returns response data for future use, but the current rendering path uses only that safe metadata.
+
+The target check returns Chrome's document ID. The request and final mount target that same document, so navigation cannot silently move an in-progress enable action onto a different page. A vanished document causes the action to fail.
+
+## Source layout and execution context
 
 ```text
 base-extension/
@@ -51,130 +98,72 @@ base-extension/
   src/
     popup/
       main.tsx               React entry point
-      Popup.tsx              Buttons, storage selection, results, and errors
-      styles.css             Popup styles
+      Popup.tsx              Tabs, switch, token viewer, clipboard, and errors
+      styles.css             Compact popup styling
     page.ts                  Active-tab checks and direct page execution
-    storage.ts               Optional chrome.storage helpers
-  public/image/              Existing extension icons
-  tests/
-    page.test.ts             Core page actions and optional storage helpers
-    build.test.mjs           Production manifest and resource checks
+    planning.config.ts       TODO target, root ID, and temporary query
+    planning.ts              Mount/check/remove the placeholder
+    graphql.ts               Same-origin authenticated transport
+    storage.ts               Small extension-storage and tab-preference helpers
+  tests/                     Focused mocked tests and production artifact checks
+  public/image/              Extension icons
   dist/                      Generated unpacked extension (ignored)
 ```
 
-Start with `Popup.tsx` and `page.ts`; those two files contain the complete interaction flow. Each click queries the active tab in the current window, checks that it is a supported webpage, executes a function in the top frame, and displays its result or error. Nothing is installed in the webpage between clicks.
+Injected functions are self-contained. Chrome copies them into the page; imported values or popup closures are not available there. Configuration travels through serializable `args`. Functions return a small `{ value }` or `{ error }` directly; there is no runtime messaging protocol. See the [Chrome scripting API](https://developer.chrome.com/docs/extensions/reference/api/scripting).
 
-## Accessing and changing the webpage
+The DOM, session storage, and GraphQL fetch all use Chrome's **isolated world**. No MAIN-world execution is necessary. The only durable page addition is the extension-owned view root. There are no token globals, token DOM attributes, or page-rendered token values.
 
-`src/page.ts` contains the injected function. Chrome copies that function into the webpage, so it **cannot reference imports or variables from the popup's scope**. Pass values through `args`. Keep DOM work inside that function.
+For future continuous page observation, add a dedicated content script and precise manifest matches only when needed. For lifecycle events, add a worker only when a feature needs it. CRXJS supports those manifest entries without prebuilt messaging infrastructure.
 
-The current implementation reads `document.title` and performs storage operations. To query another value, change the title branch to something like:
+## Permissions and storage boundaries
 
-```ts
-return { value: document.querySelector('h1')?.textContent ?? '' };
-```
+The manifest retains `activeTab`, `scripting`, and `storage`. No host permissions or clipboard permission were added. Opening the popup grants temporary current-tab access where Chrome permits it. Non-HTTP(S) pages and the Chrome Web Store are rejected; Chrome policy, protected viewers, and user site restrictions can also block access.
 
-For a user-triggered DOM modification, the same branch could find an element and update it:
+Webpage `sessionStorage` belongs to the website and tab session. The token must be read inside an injected function; reading popup `sessionStorage` would access the extension origin instead. The previous local/session demo UI was replaced by the real feature; native Web Storage remains available inside injected functions when future page features need it.
 
-```ts
-const heading = document.querySelector('h1');
-if (heading) heading.textContent = 'Updated by my extension';
-return { value: heading ? 'Heading updated.' : 'No heading found.' };
-```
+`chrome.storage.local` belongs to the extension and stores the selected tab preference. The small `extensionStorage('local' | 'session')` helper remains available for other extension-owned primitive values. `chrome.storage.session` is not exposed to content scripts by default; this extension does not widen that access. Never use either extension storage area for the page token.
 
-These are customization examples; the starter does not modify DOM elements by default. It never assumes the webpage has a React `#root`. Treat webpage text as untrusted and render it as text, as the popup already does.
+Production executable code is bundled locally under Chrome's default CSP. Tokens are sent only to the current page origin's `/graphql` endpoint and, when explicitly requested, copied to the user's clipboard. There is no arbitrary-code endpoint or webpage message bridge.
 
-Here is the underlying Chrome API pattern, usable from popup code:
+## Commands and development
 
-```ts
-const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-if (tab?.id === undefined) throw new Error('No active tab');
-const [injection] = await chrome.scripting.executeScript({
-  target: { tabId: tab.id },
-  world: 'ISOLATED',
-  func: (selector: string) => document.querySelector(selector)?.textContent ?? '',
-  args: ['h1'],
-});
-console.log(injection?.result);
-```
+Dependencies remain pinned: Vite 8, CRXJS 3, React 19, TypeScript 6, Chrome API types, ESLint 10, Prettier, and Vitest 5. Use npm and the committed lockfile.
 
-The provided `runPageAction` additionally checks URLs, handles missing results, and returns storage errors explicitly. Its small `{ value }` / `{ error }` return value preserves page-side failures that Chrome may otherwise leave without a result. This is a direct execution result, with no listener or message transport. See the [Chrome scripting API](https://developer.chrome.com/docs/extensions/reference/api/scripting).
+Run inside `base-extension`:
 
-Execution stays in Chrome's **isolated world**. The injected function can access the webpage DOM and origin storage without sharing the website's JavaScript globals. MAIN-world execution is unnecessary here.
+| Command                                   | Purpose                                               |
+| ----------------------------------------- | ----------------------------------------------------- |
+| `npm ci`                                  | Install the committed dependency graph                |
+| `npm run dev`                             | Start Vite / CRXJS development mode                   |
+| `npm run build`                           | Type-check and build the production `dist/` extension |
+| `npm run lint`                            | Check source, tests, and configuration                |
+| `npm run typecheck`                       | Check TypeScript                                      |
+| `npm test` / `npm run test:watch`         | Run / watch tests                                     |
+| `npm run verify:build`                    | Check production output; build first                  |
+| `npm run format` / `npm run format:check` | Apply / check formatting                              |
+| `npm run check`                           | Run all checks and generate production output         |
 
-## Webpage storage and extension storage
+For development, keep `npm run dev` running on port 5173 and load `dist/`. CRXJS supplies popup hot updates and development-only helpers. Reload the extension after manifest changes, and remove/re-enable a mounted Planning View after changing its renderer. Run `npm run build` before distribution or production checks. No release or publication is part of this feature.
 
-The main examples use native Web Storage strings. `getItem` returns a string or `null` for a missing key; `setItem` writes a string; `removeItem` removes the selected key. There is no automatic JSON parsing. If your own feature stores objects, explicitly serialize and parse them where needed, and handle malformed data.
+## Tests and browser verification
 
-`window.localStorage` and `window.sessionStorage` execute **inside the injected function**, so they belong to the webpage origin. Calling these APIs in the popup would access the extension origin instead. Local storage normally persists across page visits; session storage is scoped to the website origin and tab session. Browser policy, privacy settings, and quotas can restrict both; failures appear in the popup.
+Tests use only mock tokens and mock responses. They cover preference persistence, clipboard success/failure, actual page-state initialization helpers, target modes, duplicate prevention, safe removal, missing targets, same-document execution, token availability, GraphQL request construction, and error cases. Serialized page functions run in Node VM contexts to catch accidental popup closure references. DOM tests use a small fixture, not a real browser. Production checks validate the MV3 manifest and local resources and reject stale content bundles or development code.
 
-For extension-owned data, the optional `src/storage.ts` helper provides small wrappers around `chrome.storage.local` and `chrome.storage.session`:
+No manual Chrome testing or real authenticated GraphQL request has been performed. After selecting the real anchor, verify:
 
-```ts
-// From src/popup code:
-import { extensionStorage } from '../storage';
+1. Load `dist/` in Chrome without manifest or missing-resource errors.
+2. On a test webpage with the configured target and a mock or appropriate test account token, enable Planning. Verify one POST to that origin's `/graphql`, the expected headers/body, and a single placeholder beside the original element.
+3. Close/reopen the popup: the switch reflects the existing root. Disable it: only the created root disappears. Reload the webpage: the view stays off.
+4. Try ID, CSS, and XPath targets. Missing/invalid selectors should show an error without changing original content.
+5. Open Token, select/copy the full value, refresh after changing or removing it, and test clipboard rejection. Confirm no token is written to extension storage or the webpage DOM.
+6. Select a popup tab and reopen the popup to verify preference restoration.
+7. Test absent/empty tokens, blocked storage, network failure, HTTP 401/403/500, and GraphQL errors. No failed new enable should leave a partial root or leak credentials into error text.
+8. Navigate while enabling. The action must fail for the old document instead of requesting or mounting on the replacement page.
+9. Try Chrome internal pages and the Chrome Web Store; errors should remain clear.
 
-const storage = extensionStorage('local'); // or 'session'
-await storage.set('compact-view', true);
-const value = await storage.get('compact-view'); // unknown: validate before use
-await storage.remove('compact-view');
-```
+For blank popup or clipboard issues, right-click the popup and choose **Inspect**. For access errors, check Chrome site permissions and reopen the popup on an HTTP(S) page. For a missing target, edit the TODO in `planning.config.ts`; no business website or selector has been assumed. For GraphQL authentication errors, verify the test account's current page-origin session token and backend contract without logging credentials.
 
-The helper accepts primitive values and lets Chrome API failures reject normally; catch them in the calling UI. Extension local storage persists across browser restarts. Extension session storage is held in memory and cleared on extension reload/disable/update or browser restart. `chrome.storage.session` is not exposed to content scripts by default; this starter does not change that access level. These APIs are unrelated to website storage and require the `storage` permission. See [Chrome's storage documentation](https://developer.chrome.com/docs/extensions/reference/api/storage).
+The earlier dependency audit reported 11 moderate development-tool findings from the [minimatch advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249) in the linting dependency chain; dependencies have not changed in this feature. No forced major override was applied. The previous runtime audit reported zero findings. Recheck `npm audit` as upstream tools update.
 
-## Permissions and target websites
-
-The manifest requests only `activeTab`, `scripting`, and `storage`. Opening the popup grants temporary active-tab access where Chrome permits it. There are no broad host permissions, static content script matches, or production web-accessible resources. If you remove the optional extension storage helper, you can also remove the `storage` permission; webpage Web Storage does not require it.
-
-`runPageAction` rejects non-HTTP(S) pages and the Chrome Web Store before attempting injection. Chrome may also block protected viewers, user-restricted sites, or policy-restricted pages; API failures appear in the popup. Reopen the popup after navigation to renew access. To limit the example to a particular website, add an allowlist check beside the URL checks in `src/page.ts`.
-
-Production code is bundled locally and uses Chrome's default extension CSP. There is no eval, remote executable code, arbitrary code endpoint, or webpage message bridge. Do not collect unrelated storage keys, credentials, or private website data.
-
-## Adding features later
-
-For ongoing webpage observation or automatic behavior, add a dedicated content script only when needed. CRXJS can bundle this manifest entry once you create `src/content.ts`:
-
-```ts
-content_scripts: [{
-  matches: ['https://example.com/*'],
-  js: ['src/content.ts'],
-  run_at: 'document_idle',
-}],
-```
-
-Use precise [Chrome match patterns](https://developer.chrome.com/docs/extensions/develop/concepts/match-patterns). Automatic injection changes when and where the extension runs; choose the scope deliberately.
-
-For lifecycle events or work while the popup is closed, create `src/background.ts` and add:
-
-```ts
-background: { service_worker: 'src/background.ts', type: 'module' },
-```
-
-A worker has no DOM or Web Storage; use extension storage there. Introduce messaging only if these future contexts actually need to communicate. No placeholder files or messaging infrastructure are included now.
-
-To reuse the starter, copy the repository or use GitHub's template workflow if enabled. Update the package name, manifest name/description/version, icons, and README. Keep npm as the single package manager and commit lockfile changes. The existing [license](LICENSE) remains in place.
-
-## Validation and debugging
-
-`npm test` checks direct DOM results, both webpage storage areas, isolated-function serialization, storage restrictions, unsupported tabs, injection failures, missing results, and the optional extension storage helpers. The injected function runs in a fresh Node VM during tests to catch accidental references to popup variables. Production checks verify the MV3 manifest, permissions, popup resources, local asset references, and absence of obsolete content-script output or development code.
-
-These checks do not replace Chrome verification. After `npm run check`, manually:
-
-1. Load `dist/` and confirm Chrome reports no extension errors.
-2. Read the title on a regular webpage without a `#root`; repeat after navigating and reopening the popup.
-3. Save/read/remove the demo in both webpage storage areas. Check only that key in the webpage's DevTools Application panel; unrelated values should remain unchanged.
-4. Try a Chrome internal page and the Chrome Web Store, and confirm meaningful errors.
-5. Try blocked webpage storage and restricted site access; confirm errors appear without crashing the popup.
-6. Run development mode and verify popup updates and page actions after editing.
-
-Manual Chrome testing has not been performed as part of the automated validation.
-
-For a blank popup, right-click it and choose **Inspect**; make sure you loaded `dist/`. For injection failures, use an HTTP(S) page, check Chrome site-access settings, and reopen the popup. For development connection failures, keep Vite running on port 5173 and reload the extension after switching between development and production builds. For install or native build errors, check Node compatibility and run `npm ci` instead of copying `node_modules` between systems.
-
-The previous dependency audit reported 11 moderate development-tool findings from the [minimatch denial-of-service advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249) in ESLint / TypeScript ESLint. A forced major override would exceed their declared dependency ranges, so none is applied. This dependency is not shipped in the extension; the runtime audit reported zero vulnerabilities. Recheck `npm audit` as upstream tools update.
-
-## What the simplification removed
-
-The earlier modernization replaced CRA and a filename-scanning manifest script with Vite and CRXJS. This pass preserves that build system and replaces its persistent content listener with direct `executeScript` results.
-
-Removed the request/response message contracts, runtime validators, sender checks, duplicate-injection flag, standalone content bundle, message transport, error normalization module, JSON webpage-storage wrapper, and four-location storage demonstration UI. Those layers served a long-lived message endpoint that the current examples do not need. Extension storage remains an optional small helper. Tests now focus on page execution, storage behavior, and production output instead of the removed messaging infrastructure.
+The existing [license](LICENSE) is unchanged.
