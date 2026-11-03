@@ -9,7 +9,8 @@ Use Node 22.12+ within 22.x, Node 24.x (recommended), or Node 26+:
 ```sh
 npm ci
 npm run dev
-npm run check
+npm run typecheck
+npm run build
 ```
 
 Load `dist/` through `chrome://extensions/` → Developer mode → Load unpacked. Use `npm run build` for production output.

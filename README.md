@@ -105,7 +105,6 @@ base-extension/
     planning.ts              Mount/check/remove the placeholder
     graphql.ts               Same-origin authenticated transport
     storage.ts               Small extension-storage and tab-preference helpers
-  tests/                     Focused mocked tests and production artifact checks
   public/image/              Extension icons
   dist/                      Generated unpacked extension (ignored)
 ```
@@ -128,27 +127,22 @@ Production executable code is bundled locally under Chrome's default CSP. Tokens
 
 ## Commands and development
 
-Dependencies remain pinned: Vite 8, CRXJS 3, React 19, TypeScript 6, Chrome API types, ESLint 10, Prettier, and Vitest 5. Use npm and the committed lockfile.
+The dependency set is intentionally small: React and React DOM at runtime; Vite, CRXJS, the React Vite plugin, TypeScript, and required type definitions for development. The project does not include linting, formatting, or test frameworks. Use npm and the committed lockfile.
 
 Run inside `base-extension`:
 
-| Command                                   | Purpose                                               |
-| ----------------------------------------- | ----------------------------------------------------- |
-| `npm ci`                                  | Install the committed dependency graph                |
-| `npm run dev`                             | Start Vite / CRXJS development mode                   |
-| `npm run build`                           | Type-check and build the production `dist/` extension |
-| `npm run lint`                            | Check source, tests, and configuration                |
-| `npm run typecheck`                       | Check TypeScript                                      |
-| `npm test` / `npm run test:watch`         | Run / watch tests                                     |
-| `npm run verify:build`                    | Check production output; build first                  |
-| `npm run format` / `npm run format:check` | Apply / check formatting                              |
-| `npm run check`                           | Run all checks and generate production output         |
+| Command             | Purpose                                               |
+| ------------------- | ----------------------------------------------------- |
+| `npm ci`            | Install the committed dependency graph                |
+| `npm run dev`       | Start Vite / CRXJS development mode                   |
+| `npm run typecheck` | Check TypeScript                                      |
+| `npm run build`     | Type-check and build the production `dist/` extension |
 
 For development, keep `npm run dev` running on port 5173 and load `dist/`. CRXJS supplies popup hot updates and development-only helpers. Reload the extension after manifest changes, and remove/re-enable a mounted Planning View after changing its renderer. Run `npm run build` before distribution or production checks. No release or publication is part of this feature.
 
-## Tests and browser verification
+## Browser verification
 
-Tests use only mock tokens and mock responses. They cover preference persistence, clipboard success/failure, actual page-state initialization helpers, target modes, duplicate prevention, safe removal, missing targets, same-document execution, token availability, GraphQL request construction, and error cases. Serialized page functions run in Node VM contexts to catch accidental popup closure references. DOM tests use a small fixture, not a real browser. Production checks validate the MV3 manifest and local resources and reject stale content bundles or development code.
+This minimal starter has no automated test framework. `npm run typecheck` and `npm run build` validate compilation and production bundling; browser behavior must be checked manually.
 
 No manual Chrome testing or real authenticated GraphQL request has been performed. After selecting the real anchor, verify:
 
@@ -164,6 +158,6 @@ No manual Chrome testing or real authenticated GraphQL request has been performe
 
 For blank popup or clipboard issues, right-click the popup and choose **Inspect**. For access errors, check Chrome site permissions and reopen the popup on an HTTP(S) page. For a missing target, edit the TODO in `planning.config.ts`; no business website or selector has been assumed. For GraphQL authentication errors, verify the test account's current page-origin session token and backend contract without logging credentials.
 
-The earlier dependency audit reported 11 moderate development-tool findings from the [minimatch advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249) in the linting dependency chain; dependencies have not changed in this feature. No forced major override was applied. The previous runtime audit reported zero findings. Recheck `npm audit` as upstream tools update.
+The lockfile was resolved with an exclusive October 1, 2026 publication cutoff for corporate package-maturity compatibility. All retained direct dependencies and every transitive lockfile entry were independently checked against public npm publication metadata. See the dependency cleanup report for the exact result and the security tradeoffs imposed by that historical cutoff.
 
 The existing [license](LICENSE) is unchanged.
