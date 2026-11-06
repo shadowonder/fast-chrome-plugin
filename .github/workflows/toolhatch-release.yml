@@ -1,0 +1,67 @@
+name: ToolHatch macOS release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: tool-hatch
+        shell: bash
+    env:
+      GOTOOLCHAIN: local
+      MACOSX_DEPLOYMENT_TARGET: '12.0'
+      CGO_CFLAGS: -mmacosx-version-min=12.0
+      CGO_LDFLAGS: -mmacosx-version-min=12.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.4'
+          cache-dependency-path: tool-hatch/go.sum
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.22.2'
+          cache: npm
+          cache-dependency-path: tool-hatch/frontend/package-lock.json
+      - name: Install tools and dependencies
+        run: |
+          npm install --global npm@10.9.2
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          go mod download
+          go mod verify
+      - name: Build, package and verify Universal macOS app
+        # Existing tasks run npm ci, generate bindings and build both architectures.
+        run: wails3 task darwin:package:zip
+      - name: Run tests and vet
+        run: |
+          go test ./...
+          go vet ./...
+          npm --prefix frontend test
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: toolhatch-${{ github.run_id }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; skipping."
+          else
+            gh release create "$RELEASE_TAG" bin/ToolHatch-macos-universal.zip \
+              --target "$GITHUB_SHA" \
+              --title "ToolHatch $RELEASE_TAG" \
+              --generate-notes \
+              --notes "Universal macOS app, ad-hoc signed. Not Apple-notarized." \
+              --latest=false
+          fi

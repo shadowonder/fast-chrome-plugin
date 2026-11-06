@@ -1,0 +1,109 @@
+version: '3'
+
+vars:
+  APP_NAME: ToolHatch
+  VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
+
+tasks:
+  build:
+    summary: Build the frontend and native desktop executable for this host
+    vars:
+      OUTPUT: '{{.OUTPUT | default "bin/ToolHatch"}}'
+      BUILD_FLAGS: '{{if eq .DEV "true"}}-buildvcs=false -gcflags=all="-l"{{else}}-tags production -trimpath -buildvcs=false -ldflags="-w -s{{if eq OS "windows"}} -H windowsgui{{end}}"{{end}}'
+    cmds:
+      - task: frontend:install
+      - task: bindings
+      - task: frontend:build
+      - go build {{.BUILD_FLAGS}} -o {{.OUTPUT}}{{exeExt}} .
+    env:
+      GOARCH: '{{.ARCH | default ARCH}}'
+      CGO_ENABLED: '{{if eq OS "windows"}}0{{else}}1{{end}}'
+      MACOSX_DEPLOYMENT_TARGET: '12.0'
+      CGO_CFLAGS: '{{if eq OS "darwin"}}-mmacosx-version-min=12.0{{end}}'
+      CGO_LDFLAGS: '{{if eq OS "darwin"}}-mmacosx-version-min=12.0{{end}}'
+
+  frontend:install:
+    run: once
+    dir: frontend
+    sources: [package.json, package-lock.json]
+    generates: [node_modules/.package-lock.json]
+    cmds:
+      - npm ci
+
+  bindings:
+    run: once
+    cmds:
+      - wails3 generate bindings -clean=true
+
+  frontend:build:
+    run: once
+    dir: frontend
+    cmds:
+      - npm run {{if eq .DEV "true"}}build:dev{{else}}build{{end}}
+
+  common:dev:frontend:
+    dir: frontend
+    cmds:
+      - npm run dev -- --port {{.VITE_PORT}} --strictPort
+
+  run:
+    summary: Run the built desktop application
+    cmds:
+      - task: '{{if eq OS "darwin"}}mac:run{{else}}native:run{{end}}'
+
+  native:run:
+    internal: true
+    cmds:
+      - './bin/{{.APP_NAME}}{{exeExt}}'
+
+  mac:bundle:
+    summary: Create an ad-hoc signed macOS app bundle for local use
+    platforms: [darwin]
+    cmds:
+      - rm -rf bin/{{.APP_NAME}}.app
+      - mkdir -p bin/{{.APP_NAME}}.app/Contents/MacOS
+      - cp bin/{{.APP_NAME}} bin/{{.APP_NAME}}.app/Contents/MacOS/{{.APP_NAME}}
+      - cp build/darwin/Info.plist bin/{{.APP_NAME}}.app/Contents/Info.plist
+      - codesign --force --sign - bin/{{.APP_NAME}}.app
+      - codesign --verify --strict bin/{{.APP_NAME}}.app
+
+  mac:run:
+    internal: true
+    cmds:
+      - task: mac:bundle
+      - './bin/{{.APP_NAME}}.app/Contents/MacOS/{{.APP_NAME}}'
+
+  dev:
+    cmds:
+      - wails3 dev -config ./build/config.yml -port {{.VITE_PORT}}
+
+  darwin:build:universal:
+    summary: Build both native macOS architectures and combine them (Wails v3 pattern)
+    platforms: [darwin]
+    cmds:
+      - task: build
+        vars:
+          ARCH: arm64
+          OUTPUT: bin/ToolHatch-arm64
+      - task: build
+        vars:
+          ARCH: amd64
+          OUTPUT: bin/ToolHatch-amd64
+      - lipo -create -output bin/ToolHatch bin/ToolHatch-arm64 bin/ToolHatch-amd64
+      - lipo bin/ToolHatch -verify_arch arm64 x86_64
+      - rm bin/ToolHatch-arm64 bin/ToolHatch-amd64
+
+  darwin:package:universal:
+    summary: Package the Universal executable as an ad-hoc signed ToolHatch.app
+    platforms: [darwin]
+    cmds:
+      - task: darwin:build:universal
+      - task: mac:bundle
+
+  darwin:package:zip:
+    summary: Create and verify the complete Universal macOS app archive
+    platforms: [darwin]
+    cmds:
+      - task: darwin:package:universal
+      - ditto -c -k --sequesterRsrc --keepParent bin/ToolHatch.app bin/ToolHatch-macos-universal.zip
+      - python3 scripts/verify-macos-archive.py bin/ToolHatch-macos-universal.zip
