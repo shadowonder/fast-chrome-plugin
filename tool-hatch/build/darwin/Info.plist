@@ -5,6 +5,7 @@
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleName</key><string>ToolHatch</string>
   <key>CFBundleExecutable</key><string>ToolHatch</string>
+  <key>CFBundleIconFile</key><string>icon.icns</string>
   <key>CFBundleIdentifier</key><string>io.github.shadowonder.toolhatch</string>
   <key>CFBundleVersion</key><string>0.1.0</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>ToolHatch</title>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="#111b2e"/>
+  <rect x="370" y="252" width="284" height="170" rx="50" fill="#5eead4"/>
+  <rect x="414" y="296" width="196" height="126" rx="18" fill="#111b2e"/>
+  <rect x="216" y="350" width="592" height="410" rx="64" fill="#5eead4"/>
+  <rect x="254" y="388" width="516" height="334" rx="28" fill="#173f4a"/>
+  <polygon points="344,454 450,552 344,650 316,620 394,552 316,484" fill="#f1f5f9"/>
+  <rect x="516" y="610" width="140" height="40" rx="20" fill="#f1f5f9"/>
+</svg>

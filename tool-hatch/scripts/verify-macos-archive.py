@@ -25,6 +25,9 @@ def verify(archive):
         assert info['CFBundleExecutable'] == 'ToolHatch'
         assert info['CFBundleIdentifier'] == 'io.github.shadowonder.toolhatch'
         assert info['CFBundlePackageType'] == 'APPL'
+        assert info['CFBundleIconFile'] == 'icon.icns', 'Bundle icon reference missing'
+        icon = bundle.read('ToolHatch.app/Contents/Resources/icon.icns')
+        assert icon[:4] == b'icns' and int.from_bytes(icon[4:8], 'big') == len(icon), 'Invalid bundle icon'
         executable = bundle.getinfo('ToolHatch.app/Contents/MacOS/ToolHatch')
         assert executable.external_attr >> 16 & stat.S_IXUSR, 'Executable bit missing'
         assert 'ToolHatch.app/Contents/_CodeSignature/CodeResources' in bundle.namelist(), 'Bundle signature missing'
@@ -33,7 +36,7 @@ def verify(archive):
         app = Path(folder) / 'ToolHatch.app'
         subprocess.run(['lipo', str(app / 'Contents/MacOS/ToolHatch'), '-verify_arch', 'arm64', 'x86_64'], check=True)
         subprocess.run(['codesign', '--verify', '--deep', '--strict', str(app)], check=True)
-    print(f'Verified Universal, ad-hoc signed ToolHatch.app in {archive.name}')
+    print(f'Verified Universal, signed ToolHatch.app with icon in {archive.name}')
 
 
 if __name__ == '__main__':

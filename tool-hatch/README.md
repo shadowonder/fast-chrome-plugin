@@ -40,20 +40,47 @@ wails3 task run    # launch the built application
 wails3 task mac:bundle
 ```
 
-On macOS, the run task creates and ad-hoc signs `bin/ToolHatch.app`. No separate Task installation is needed; `wails3` runs the Taskfile.
+On macOS, the run task creates and signs `bin/ToolHatch.app` (configured local identity or ad-hoc fallback). No separate Task installation is needed; `wails3` runs the Taskfile.
 
 ## macOS distribution
 
-On macOS with Xcode Command Line Tools, build both Apple Silicon and Intel binaries, combine them with `lipo`, create the complete bundle, ad-hoc sign it, and archive it:
+On macOS with Xcode Command Line Tools, build both Apple Silicon and Intel binaries, combine them with `lipo`, create the complete bundle with its ToolHatch icon, sign it, and archive it:
 
 ```sh
 wails3 task darwin:package:zip
 python3 scripts/verify-macos-archive.py bin/ToolHatch-macos-universal.zip
 ```
 
-The existing Taskfile follows the [Wails v3 Universal packaging pattern](https://v3.wails.io/guides/build/macos/), building architectures sequentially while sharing generated frontend assets. The ZIP contains `ToolHatch.app`, including its executable, bundle metadata and signature. `ditto` preserves bundle structure and executable permissions. Verification extracts the actual archive and checks identity, both architectures, code signature and absence of workspace/development documents. Only this ZIP is distributed; the raw executable is not an application bundle.
+The existing Taskfile follows the [Wails v3 Universal packaging pattern](https://v3.wails.io/guides/build/macos/), building architectures sequentially while sharing generated frontend assets. The ZIP contains `ToolHatch.app`, including its executable, branded `.icns`, bundle metadata and signature. `ditto` preserves bundle structure and executable permissions. Verification extracts the actual archive and checks application identity, icon, both architectures, code signature and absence of workspace/development documents. Only this ZIP is distributed; the raw executable is not an application bundle.
 
-The app is **ad-hoc signed and not Apple-notarized**. No paid Apple credentials are required. Downloaded copies may be blocked by Gatekeeper; after verifying the source, users can follow Apple's normal [Open Anyway procedure](https://support.apple.com/en-us/102445). Managed Macs may prohibit opening it. Compatibility with older macOS versions and native Intel execution still require runtime checks; a deployment target and two compiled slices alone do not prove them.
+### Optional local signing
+
+By default, packaging uses offline ad-hoc signing. To use your existing self-managed macOS code-signing identity, set its exact name or SHA-1 fingerprint from `security find-identity -v -p codesigning`:
+
+```sh
+TOOLHATCH_SIGNING_IDENTITY="ToolHatch Local" wails3 task darwin:package:zip
+# The same setting works with mac:bundle, task run and wails3 dev.
+```
+
+The identity must include an accessible private key in your normal Keychain search list and be valid for code signing. You manage its creation/import/access permissions in Keychain Access; the project does not create certificates, alter trust, store keys, or change your Keychain. Use a fingerprint if names are ambiguous. When the setting is empty, ad-hoc signing is used. When a configured identity is unavailable, packaging warns and falls back to ad-hoc. A selected identity that fails signing (for example, a locked key or denied access) fails the build so the problem is visible. Signing disables online timestamps; signature verification runs after signing and again on the extracted ZIP.
+
+This option is only a convenience for local/private distribution with a stable signing identity. A self-managed identity is **not Apple Developer ID signing or Apple notarization**, and does not make public downloads trusted. No paid Apple account, notarization or CI secrets are required. The unchanged GitHub workflow has no configured identity and continues to sign ad-hoc.
+
+GitHub-downloaded ZIPs/apps may carry quarantine metadata. Both self-managed and ad-hoc builds can be rejected by Gatekeeper because ToolHatch is not Developer ID signed/notarized. After verifying the source, users can follow Apple's normal [Open Anyway procedure](https://support.apple.com/en-us/102445); managed Macs may prohibit opening the app. A successful `codesign --verify` checks integrity, not Gatekeeper approval. Do not disable system protections or assume a locally trusted certificate transfers trust to another Mac. Older macOS and native Intel execution still require runtime checks; macOS 12 is a deployment target, not a verified compatibility claim.
+
+### Icon assets
+
+`build/appicon.svg` is the editable ToolHatch toolbox/terminal mark; `build/appicon.png` is the 1024px raster source for Wails; `build/darwin/icon.icns` is committed and copied to `Contents/Resources/icon.icns`, referenced by `CFBundleIconFile`. `frontend/public/toolhatch.svg` supplies the matching favicon. Ordinary builds use these checked-in assets and need no extra graphics tools.
+
+After editing the SVG, refresh the PNG with your SVG exporter (ImageMagick was used here), copy the SVG to the frontend, then use the pinned Wails CLI to regenerate `.icns`:
+
+```sh
+magick -background none build/appicon.svg -depth 8 build/appicon.png
+cp build/appicon.svg frontend/public/toolhatch.svg
+wails3 generate icons -input build/appicon.png -macfilename build/darwin/icon.icns -windowsfilename /tmp/toolhatch-icon.ico
+```
+
+The temporary ICO is not distributed; no Windows packaging is introduced. Finder/Dock may cache an older icon for an already-open or previously installed copy; rebuild/relaunch the new bundle when checking it.
 
 ## Automatic GitHub releases
 
@@ -72,7 +99,8 @@ The workflow must be present on `main`, and repository/org policy must allow Act
 - `frontend/`: React components, CSS, generated binding imports, npm lockfile, Vite and focused UI tests.
 - `Taskfile.yml`, `build/config.yml`: native build and development workflow.
 - `build/darwin/Info.plist`: ToolHatch bundle identity, identifier `io.github.shadowonder.toolhatch` (bundle version currently 0.1.0; push releases use separate run identifiers).
-- `scripts/`: macOS archive verification used by the existing packaging task.
+- `build/appicon.svg`, `build/appicon.png`, `build/darwin/icon.icns`: editable source and packaged icon assets.
+- `scripts/`: local signing selection and archive verification used by the existing packaging task.
 
 `frontend/bindings/`, `frontend/dist/`, `frontend/node_modules/`, `.task/` and `bin/` are generated and ignored. Do not hand-edit bindings. Run `wails3 build` before standalone `go vet ./...` or `go build`; Go embeds the generated frontend. `npm run build` alone requires bindings to have been generated first.
 
